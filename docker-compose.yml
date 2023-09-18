@@ -1,0 +1,15 @@
+version: "3.9"
+
+services:
+  trader:
+    build: .
+  
+  influx:
+    image: influxdb:2.7.1
+    ports:
+      - 8086:8086
+    volumes:
+      - influx:/var/lib/influxdb2
+
+volumes:
+  influx:
