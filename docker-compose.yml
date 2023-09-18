@@ -3,6 +3,10 @@ version: "3.9"
 services:
   trader:
     build: .
+    environment:
+      - INFLUXDB_TOKEN
+    depends_on:
+      - influx
   
   influx:
     image: influxdb:2.7.1
