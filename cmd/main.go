@@ -1,116 +1,78 @@
 package main
 
 import (
-	"context"
+	"fmt"
 	"os"
-	"strconv"
 	"time"
 	"trader/cmd/lib/coinbase"
 
-	"github.com/gorilla/websocket"
-	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
-	"github.com/influxdata/influxdb-client-go/v2/api/write"
 	"github.com/rs/zerolog/log"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
-const influxEndpoint = "http://influx:8086"
-const coinbaseEndpoint = "wss://ws-feed.exchange.coinbase.com"
+var postgresPassword string = os.Getenv("POSTGRES_PASSWORD")
 
-var influxToken string = os.Getenv("INFLUXDB_TOKEN")
-
-const influxOrg = "testorg"
-const influxBucket = "ticker"
-
-func subscribe(c *websocket.Conn) error {
-	subscribeMessage := coinbase.SubscribeMessage{
-		Type:       "subscribe",
-		ProductIds: []string{"BTC-USD"},
-		Channels: []coinbase.Channel{
-			{
-				Name: "ticker",
-			},
-		},
-	}
-
-	err := c.WriteJSON(subscribeMessage)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
+const postgresHost = "postgres"
+const postgresPort = 5432
+const postgresUsername = "trader"
+const postgresDb = "trader"
 
 func main() {
 	log.Info().Msg("Starting up")
 
-	influxClient := influxdb2.NewClient(influxEndpoint, influxToken)
-	influxWriter := influxClient.WriteAPIBlocking(influxOrg, influxBucket)
+	_, err := gorm.Open(
+		postgres.Open(fmt.Sprintf(
+			"host=%s user=%s password=%s dbname=%s port=%d sslmode=disable",
 
-	log.Info().Msgf("Connected to influx at: %s", influxEndpoint)
-
-	c, _, err := websocket.DefaultDialer.Dial(coinbaseEndpoint, nil)
+			postgresHost,
+			postgresUsername,
+			postgresPassword,
+			postgresDb,
+			postgresPort,
+		)),
+		&gorm.Config{},
+	)
 	if err != nil {
 		log.Fatal().Err(err).Send()
 	}
-	defer c.Close()
 
-	log.Info().Msgf("Dialed Coinbase at: %s", coinbaseEndpoint)
+	log.Info().Msgf("Connected to postgres!")
+	log.Info().
+		Str("host", postgresHost).
+		Int("port", postgresPort).
+		Str("username", postgresUsername).
+		Str("db", postgresDb).
+		Send()
 
-	if err = subscribe(c); err != nil {
-		log.Fatal().Err(err).Send()
-	}
+	// Read minute by minute rates and calculate momentum
+	for {
+		now := time.Now()
 
-	log.Info().Msg("Subscribed to coinbase ticker")
-
-	// Read ticket messages from the websocket connection
-	messages := make(chan coinbase.TickerMessage, 8)
-
-	go func() {
-		log.Info().Msg("Fetching ticker info. No individual ticker logs will be shown")
-
-		defer close(messages)
-		for {
-			message := coinbase.TickerMessage{}
-			if err := c.ReadJSON(&message); err != nil {
-				log.Error().Err(err).Send()
-				break
-			}
-
-			messages <- message
-
-			// Hit the Coinbase ratelimit of 8 messages / second
-			time.Sleep(125 * time.Millisecond)
-		}
-	}()
-
-	for message := range messages {
-		if message.Price == "" {
-			continue
-		}
-
-		floatPrice, err := strconv.ParseFloat(message.Price, 64)
-		if err != nil {
-			log.Fatal().Err(err).Send()
-		}
-
-		// "layout" argument for time.Parse is specific value
-		// https://stackoverflow.com/a/25845833
-		tickTime, err := time.Parse("2006-01-02T15:04:05.000000Z", message.Time)
-		if err != nil {
-			log.Fatal().Err(err).Send()
-		}
-
-		tickPoint := write.NewPoint(
-			"price",
-			map[string]string{"product_id": message.ProductId},
-			map[string]interface{}{"price": floatPrice},
-			tickTime,
+		// Get 1m granular candle data for the past minute
+		// Returns one bucket
+		candles, err := coinbase.GetHistoricCandles(
+			"BTC-USD",
+			coinbase.GRANULARITY_1M,
+			now.Add(-1*time.Minute),
+			now,
 		)
+		if err != nil {
+			log.Fatal().Err(err).Send()
+		}
 
-		influxWriter.WritePoint(context.Background(), tickPoint)
-		// log.Info().Str("product_id", message.ProductId).Str("price", message.Price).Send()
+		log.Info().Floats64("1m_candle", candles[0]).Send()
+
+		// Calculate momentum indicators and insert into postgres
+		// Indicators look at the past 5 periods and calculate a new
+		// value for this period
+
+		// TODO: calculate indicators for past 5 buckets, but only insert
+		// TODO: most recent one into db
+
+		// The interval between ticks is long enough to just do our
+		// buy and sell orders right here
+
+		time.Sleep(1 * time.Minute)
 	}
-
-	// In case there are no messages to process, make the main thread wait
-	select {}
 }

@@ -4,16 +4,21 @@ services:
   trader:
     build: .
     environment:
-      - INFLUXDB_TOKEN
+      - POSTGRES_PASSWORD
     depends_on:
-      - influx
+      - postgres
   
-  influx:
-    image: influxdb:2.7.1
+  postgres:
+    image: postgres:16.0-bookworm
+    restart: always
     ports:
-      - 8086:8086
+      - 5432:5432
     volumes:
-      - influx:/var/lib/influxdb2
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=trader
+      - POSTGRES_PASSWORD
+      - POSTGRES_DB=trader
 
 volumes:
-  influx:
+  postgres-data:
