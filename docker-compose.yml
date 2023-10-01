@@ -8,9 +8,19 @@ services:
     depends_on:
       - postgres
   
+  grafana:
+    image: grafana/grafana
+    restart: unless-stopped
+    ports:
+      - 3000:3000
+    depends_on:
+      - postgres
+    volumes:
+      - grafana-data:/var/lib/grafana
+  
   postgres:
     image: postgres:16.0-bookworm
-    restart: always
+    restart: unless-stopped
     ports:
       - 5432:5432
     volumes:
@@ -21,4 +31,5 @@ services:
       - POSTGRES_DB=trader
 
 volumes:
-  postgres-data:
+  postgres-data: {}
+  grafana-data: {}

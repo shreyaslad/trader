@@ -67,7 +67,7 @@ func main() {
 			now,
 		)
 		if err != nil {
-			log.Fatal().Err(err).Send()
+			log.Error().Err(err).Send()
 		}
 
 		// API makes best effort to return all periods, but not guaranteed at all

@@ -46,13 +46,12 @@ func GetHistoricCandles(productId string, granularity int, start time.Time, end 
 
 	resBody, err := io.ReadAll(res.Body)
 	if err != nil {
-		log.Error().Any("response", res).Msg("failed parsing response body")
-		log.Fatal().Err(err).Send()
+		log.Error().Any("response", res).Err(err).Msg("failed parsing response body")
 	}
 
 	if res.StatusCode != http.StatusOK {
 		log.Error().Err(errors.New("failed to get 200 OK from coinbase candle endpoint")).Send()
-		log.Fatal().Msg(string(resBody))
+		log.Error().Msg(string(resBody))
 	}
 
 	var data [][]float64
