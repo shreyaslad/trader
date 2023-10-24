@@ -40,6 +40,7 @@ func main() {
 	}
 
 	db.AutoMigrate(&models.Candle{})
+	db.AutoMigrate(&models.Order{})
 
 	log.Info().Msgf("Connected to postgres!")
 	log.Info().
@@ -123,6 +124,22 @@ func main() {
 
 		// The interval between ticks is long enough to just do our
 		// buy and sell orders right here
+
+		order := models.NewOrder(latestCandle.Close)
+
+		if latestCandle.RSI > 60 {
+			order.Type = models.SELL_ORDER
+		} else if latestCandle.RSI < 40 {
+			order.Type = models.BUY_ORDER
+		} else {
+			order.Type = models.HOLD_ORDER
+		}
+		db.Create(order)
+
+		log.Info().
+			Int("type", order.Type).
+			Float64("price", order.Price).
+			Msg("Submitted order")
 
 		time.Sleep(1 * time.Minute)
 	}
